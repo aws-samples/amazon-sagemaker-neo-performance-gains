@@ -1,0 +1,45 @@
+  # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  
+  # Licensed under the Apache License, Version 2.0 (the "License").
+  # You may not use this file except in compliance with the License.
+  # You may obtain a copy of the License at
+  
+  #     http://www.apache.org/licenses/LICENSE-2.0
+  
+  # Unless required by applicable law or agreed to in writing, software
+  # distributed under the License is distributed on an "AS IS" BASIS,
+  # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  # See the License for the specific language governing permissions and
+  # limitations under the License.
+
+config:
+  variables:
+    unoptimizedEndpointName: unoptimized-c5 # the xgboost model has 10000 trees
+    optimizedEndpointName: neo-optimized-c5 # the xgboost model has 10000 trees
+    numRowsInRequest: 125 # Each request to the endpoint contains 125 rows       
+  target: 'https://runtime.sagemaker.us-east-1.amazonaws.com'
+  phases:
+    - duration: 120
+      arrivalRate: 20 # 1200 total invocations per minute (600 per endpoint)
+    - duration: 120
+      arrivalRate: 40 # 2400 total invocations per minute (1200 per endpoint)
+    - duration: 120
+      arrivalRate: 60 # 3600 total invocations per minute (1800 per endpoint)
+    - duration: 120
+      arrivalRate: 80 # 4800 invocations per minute (2400 per endpoint... this is the max of the unoptimized endpoint)
+    - duration: 120
+      arrivalRate: 120 # only the neo endpoint can handle this load...
+    - duration: 120
+      arrivalRate: 160
+   
+  processor: './processor.js'
+ 
+scenarios:
+  - flow:
+      - post:
+            url: '/endpoints/{{ unoptimizedEndpointName }}/invocations'
+            beforeRequest: 'setRequest'
+  - flow:
+      - post:
+            url: '/endpoints/{{ optimizedEndpointName }}/invocations'
+            beforeRequest: 'setRequest'

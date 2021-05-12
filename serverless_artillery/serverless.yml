@@ -1,0 +1,93 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+
+# Licensed under the Apache License, Version 2.0 (the "License").
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+service: serverless-artillery
+
+provider:
+  name: aws
+  runtime: nodejs10.x
+  iamRoleStatements:
+    # Allows Lambda to invoke our sagemaker endpoints
+    - Effect: 'Allow'
+      Action:
+        - 'sagemaker:InvokeEndpoint'
+      Resource:
+        - 'Fn::Join':
+          - ':'
+          -
+            - 'arn:aws:sagemaker'
+            - Ref: 'AWS::Region'
+            - Ref: 'AWS::AccountId'
+            - 'endpoint/neo-optimized-c5'
+        - 'Fn::Join':
+          - ':'
+          -
+            - 'arn:aws:sagemaker'
+            - Ref: 'AWS::Region'
+            - Ref: 'AWS::AccountId'
+            - 'endpoint/unoptimized-c5'
+    # Allows Lambda to write to CloudWatch Logs
+    - Effect: 'Allow'
+      Action:
+        - 'logs:CreateLogGroup'
+        - 'logs:CreateLogStream'
+        - 'logs:PutLogEvents'
+      Resource:
+        - '*'
+    # This policy allows the function to invoke itself which is important if the script is larger than a single
+    # function can produce
+    - Effect: 'Allow'
+      Action:
+        - 'lambda:InvokeFunction'
+      Resource:
+        'Fn::Join':
+          - ':'
+          -
+            - 'arn:aws:lambda'
+            - Ref: 'AWS::Region'
+            - Ref: 'AWS::AccountId'
+            - 'function'
+            - '${self:service}-${opt:stage, self:provider.stage}-loadGenerator*' # must match function name
+    # This policy allows the function to publish notifications to the SNS topic defined below with logical ID monitoringAlerts
+    - Effect: 'Allow'
+      Action:
+        - 'sns:Publish'
+      Resource:
+        Ref: monitoringAlerts # must match the SNS topic's logical ID
+functions:
+  loadGenerator: # !!Do not edit this name!!
+    handler: handler.handler    # the serverlessArtilleryLoadTester handler() method can be found in the handler.js source file
+    timeout: 300                # set timeout to be 5 minutes (max for Lambda)
+    environment:
+      TOPIC_ARN:
+        Ref: monitoringAlerts
+      TOPIC_NAME:
+        'Fn::GetAtt':
+          - monitoringAlerts
+          - TopicName
+    events:
+      - schedule:
+          name: '${self:service}-${opt:stage, self:provider.stage}-monitoring' # !!Do not edit this name!!
+          description: The scheduled event for running the function in monitoring mode
+          rate: rate(1 minute)
+          enabled: false
+          input:
+            '>>': script.yml
+            mode: monitoring
+resources:
+  Resources:
+    monitoringAlerts: # !!Do not edit this name!!
+      Type: 'AWS::SNS::Topic'
+      Properties:
+        DisplayName: '${self:service} Monitoring Alerts'
